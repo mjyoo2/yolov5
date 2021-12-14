@@ -29,7 +29,6 @@ try:
 except ImportError:
     thop = None
 
-
 class Detect(nn.Module):
     stride = None  # strides computed during build
     onnx_dynamic = False  # ONNX export parameter
@@ -80,6 +79,12 @@ class Detect(nn.Module):
             .view((1, self.na, 1, 1, 2)).expand((1, self.na, ny, nx, 2)).float()
         return grid, anchor_grid
 
+class Identity(nn.Module):
+    def __init__(self, arg):
+        super().__init__()
+
+    def forward(self, x):
+        return x
 
 class Model(nn.Module):
     def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
@@ -278,6 +283,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
             c2 = ch[f] // args[0] ** 2
+        elif m is Identity:
+            args = [([ch[x] for x in f])]
         else:
             c2 = ch[f]
 
@@ -296,7 +303,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='yolov5s.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='yolov5n_feature.yaml', help='model.yaml')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_true', help='profile model speed')
     parser.add_argument('--test', action='store_true', help='test all yolo*.yaml')
@@ -304,15 +311,21 @@ if __name__ == '__main__':
     opt.cfg = check_yaml(opt.cfg)  # check YAML
     print_args(FILE.stem, opt)
     device = select_device(opt.device)
+    # opt.profile=True
 
     # Create model
     model = Model(opt.cfg).to(device)
     model.train()
 
+    img = torch.rand(8 if torch.cuda.is_available() else 1, 3, 640, 640).to(device)
+    y = model(img)
+    print(y[0].shape, y[1].shape, y[2].shape)
+
     # Profile
     if opt.profile:
         img = torch.rand(8 if torch.cuda.is_available() else 1, 3, 640, 640).to(device)
-        y = model(img, profile=True)
+        y = model(img)
+
 
     # Test all models
     if opt.test:
